@@ -15,9 +15,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # --- Config (set these as environment variables or replace directly) ---
-VERIFY_TOKEN   = "my_secret_verify_token"
-ACCESS_TOKEN   = "EAAWZA8Aay0RoBRydAWMRqV7VRKpXpNbwZAJQWSsyvPrEhytQRzWCL3R3hc5nFBcuGluEm8GratbgbRjfm8ZAGESJTLRaRDxCfdws93fuezy4jLr7rHse3pIKUB8mP9KWIJH6PIhIYQNVb1OqvpKR8HMuLzO7i3D6pVrq6JL1D6QYr7x5Ph8DYXXyRSvmikMmzXRvRRhYpuEkCuKRZB58TYYrYflx9867VyYVuqJZAqE5E62T3dyHOZBQ5zk8GwBsy6Ipa2CaMNTSnDnlVuMOPkCwZDZD"
-PHONE_NUMBER_ID = "1191730660696212"
+VERIFY_TOKEN   = os.getenv("VERIFY_TOKEN")
+ACCESS_TOKEN   = os.getenv("WHATSAPP_ACCESS_TOKEN")
+PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 
 WHATSAPP_API_URL = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
 
