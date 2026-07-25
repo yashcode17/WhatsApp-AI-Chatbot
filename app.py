@@ -21,6 +21,15 @@ PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 
 WHATSAPP_API_URL = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
 
+# ── HEALT CHECK  ─────────────────────────────────────────────────
+@app.route("/test", methods=["GET"])
+def test_route():
+    logger.info("/test endpoint - server is alive")
+    return jsonify({
+        "status": "ok",
+        "message": "Server is running"
+    }), 200
+
 
 # ── Webhook Verification (GET) ─────────────────────────────────────────────────
 @app.route("/webhook", methods=["GET"])
