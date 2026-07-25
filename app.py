@@ -1,11 +1,15 @@
 # app.py
-import hmac
-import hashlib
+
 import json
 import logging
 import os
+import sys
+from datetime import datetime, timezone
+
 import requests
 from flask import Flask, request, jsonify
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime
+from sqlalchemy.orm import declarative_base, sessionmaker
 
 app = Flask(__name__)
 logging.basicConfig(
@@ -18,8 +22,47 @@ logger = logging.getLogger(__name__)
 VERIFY_TOKEN   = os.getenv("VERIFY_TOKEN")
 ACCESS_TOKEN   = os.getenv("WHATSAPP_ACCESS_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 WHATSAPP_API_URL = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
+
+#Render Postgerss URL
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql1://", 1)
+
+#Database setup
+Base = declarative_base()
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+SessionLocal = sessionmaker(bind=engine)
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    phone_number = Column(String(20), nullable=False)
+    direction    = Column(String(10), nullable=False)
+    message_text = Column(Text, nullable=False)
+    created_at   = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+#Create table if not exist
+Base.metadata.create_all(engine)
+
+def save_message(phone_number: str, direction: str, message_txt: str):
+    session = SessionLocal()
+    try:
+        record = Conversation(
+            phone_number=phone_number,
+            direction=direction,
+            message_txt=message_txt
+        )
+        session.add(record)
+        session.commit()
+        logger.info("Saved %s message for %s", direction, phone_number)
+    except Exception as e:
+        session.rollback()
+        logger.error("Failse to save message: %s", e)
+    finally:
+        session.close()
 
 # ── HEALT CHECK  ─────────────────────────────────────────────────
 @app.route("/test", methods=["GET"])
@@ -38,8 +81,6 @@ def verify_webhook():
     mode      = request.args.get("hub.mode")
     token     = request.args.get("hub.verify_token")
     challenge = request.args.get("hub.challenge")
-
-    print("TOKEN IS: " + token)
 
     if mode == "subscribe" and token == VERIFY_TOKEN:
         logger.info("✅ Webhook verified successfully")
@@ -73,11 +114,15 @@ def receive_message():
             text = message["text"]["body"]
             logger.info("👤 Buyer [%s] said: %s", sender, text)
 
+            #save incoming message:
+            save_message(sender, "incoming", text)
+
             # ── Your business logic goes here ──────────────────────────
             reply_text = handle_message(sender, text)
             # ──────────────────────────────────────────────────────────
 
             send_reply(sender, reply_text)
+            save_message(sender, "outgoing", reply_text)
 
         else:
             logger.info("📎 Received non-text message of type: %s", msg_type)
@@ -125,6 +170,29 @@ def send_reply(to: str, message: str):
         logger.info("✅ Reply sent to %s", to)
     else:
         logger.error("❌ Failed to send reply: %s", response.text)
+
+#view conversation for debugging
+@app.route("/conversations/<phone_number>", methods=["GET"])
+def get_conversations(phone_number):
+    session = SessionLocal()
+    try:
+        records = (
+            session.query(Conversation)
+            .filter(Conversation.phone_number == phone_number)
+            .order_by(Conversation.created_at.asc())
+            .all()
+        )
+        result = [
+            {
+                "direction": r.direction,
+                "message": r.message_text,
+                "timestamp": r.created_at.isoformat()
+            }
+            for r in records
+        ]
+        return jsonify(result), 200
+    finally:
+        session.close()
 
 
 # ── Run ────────────────────────────────────────────────────────────────────────
