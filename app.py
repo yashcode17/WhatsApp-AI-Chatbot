@@ -47,13 +47,13 @@ class Conversation(Base):
 #Create table if not exist
 Base.metadata.create_all(engine)
 
-def save_message(phone_number: str, direction: str, message_txt: str):
+def save_message(phone_number: str, direction: str, message_text: str):
     session = SessionLocal()
     try:
         record = Conversation(
             phone_number=phone_number,
             direction=direction,
-            message_txt=message_txt
+            message_text=message_text
         )
         session.add(record)
         session.commit()
