@@ -126,7 +126,7 @@ def receive_message():
             save_message(sender, "incoming", text)
 
             # ── Your business logic goes here ──────────────────────────
-            reply_text = handle_message(sender, text)
+            reply_text = generate_llm_reply(sender, text)
             # ──────────────────────────────────────────────────────────
 
             send_reply(sender, reply_text)
@@ -201,6 +201,46 @@ def get_conversations(phone_number):
         return jsonify(result), 200
     finally:
         session.close()
+
+def get_conversation_history(phone_number: str, limit: int = 10):
+    "fetch last n messages from buyer, oldest first"
+    session = SessionLocal()
+    try:
+        records=(
+            session.query(Conversation)
+            .filter(Conversation.phone_number == phone_number)
+            .order_by(Conversation.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+        records.reverse()
+
+        message = []
+        for r in records:
+            role = "user" if r.direction == "incoming" else "assistant"
+            message.append({"role": role, "content": r.message_text})
+        return message
+    finally:
+        session.close()
+
+def generate_llm_reply(sender: str, new_message: str) -> str:
+    """Build conversation context and get a rely from groq"""
+    history = get_conversation_history(sender)
+
+    "Add newwst incoming message in conversation"
+    message = [{"role": "system", "context": SYSTEM_PROMPT}] + history + [
+        {"role": "user", "context": new_message}]
+
+    try:
+        response = groq_client.chat.completions.create(
+            model="llma-3.3-70b-versatile",
+            max_tokens=300,
+            messages=message
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        logger.error("❌ Groq API call failed: %s", e)
+        return "Sorry, I'm having trouble responding right now. Our team will get back to you shortly!"
 
 
 # ── Run ────────────────────────────────────────────────────────────────────────
