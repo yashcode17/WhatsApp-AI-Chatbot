@@ -228,12 +228,12 @@ def generate_llm_reply(sender: str, new_message: str) -> str:
     history = get_conversation_history(sender)
 
     "Add newwst incoming message in conversation"
-    message = [{"role": "system", "context": SYSTEM_PROMPT}] + history + [
-        {"role": "user", "context": new_message}]
+    message = [{"role": "system", "content": SYSTEM_PROMPT}] + history + [
+    {"role": "user", "content": new_message}]
 
     try:
         response = groq_client.chat.completions.create(
-            model="llma-3.3-70b-versatile",
+            model="llama-3.3-70b-versatile",
             max_tokens=300,
             messages=message
         )
