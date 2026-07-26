@@ -5,6 +5,7 @@ import logging
 import os
 import sys
 from datetime import datetime, timezone
+from groq import Groq
 
 import requests
 from flask import Flask, request, jsonify
@@ -23,6 +24,8 @@ VERIFY_TOKEN   = os.getenv("VERIFY_TOKEN")
 ACCESS_TOKEN   = os.getenv("WHATSAPP_ACCESS_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 DATABASE_URL = os.getenv("DATABASE_URL")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+groq_client = Groq(api_key=GROQ_API_KEY)
 
 WHATSAPP_API_URL = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
 
@@ -34,6 +37,11 @@ if DATABASE_URL.startswith("postgres://"):
 Base = declarative_base()
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine)
+
+SYSTEM_PROMPT = """You are a hgelpful sales assistent for our WhatsApp business account. 
+                You help buyers with product questions, pricing and general inqueries.
+                Keep replies concise (2-4 sentences), friendly, and conversational - this is WhatsApp, not email.
+                If you don't know specific product details, politely say you'll connect them with the team."""
 
 class Conversation(Base):
     __tablename__ = "conversations"
