@@ -1,5 +1,8 @@
 # app.py
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import json
 import logging
 import os
@@ -14,6 +17,8 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 import numpy as np
 import json
 
+from sentence_transformers import SentenceTransformer
+
 app = Flask(__name__)
 logging.basicConfig(
     level=logging.INFO,
@@ -27,18 +32,23 @@ ACCESS_TOKEN   = os.getenv("WHATSAPP_ACCESS_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 DATABASE_URL = os.getenv("DATABASE_URL")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+if not GROQ_API_KEY:
+    raise RuntimeError("GROQ_API_KEY is not set. Check your .env file.")
 groq_client = Groq(api_key=GROQ_API_KEY)
 
 WHATSAPP_API_URL = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
 
 #Render Postgerss URL
 if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql1://", 1)
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 #Database setup
 Base = declarative_base()
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine)
+
+#Setup Embedding
+embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
 SYSTEM_PROMPT = """You are a hgelpful sales assistent for our WhatsApp business account. 
                 You help buyers with product questions, pricing and general inqueries.
@@ -53,7 +63,7 @@ class DocumentChunk(Base):
     chunk_text  = Column(Text, nullable=False)
     embedding   = Column(Text, nullable=False)  
 
-Base.metadata.create_all(engine)
+# Base.metadata.create_all(engine)
 
 class Conversation(Base):
     __tablename__ = "conversations"
@@ -235,25 +245,82 @@ def get_conversation_history(phone_number: str, limit: int = 10):
     finally:
         session.close()
 
+# def generate_llm_reply(sender: str, new_message: str) -> str:
+#     """Build conversation context and get a rely from groq"""
+#     history = get_conversation_history(sender)
+
+#     "Add newwst incoming message in conversation"
+#     message = [{"role": "system", "content": SYSTEM_PROMPT}] + history + [
+#     {"role": "user", "content": new_message}]
+
+#     try:
+#         response = groq_client.chat.completions.create(
+#             model="llama-3.3-70b-versatile",
+#             max_tokens=300,
+#             messages=message
+#         )
+#         return response.choices[0].message.content.strip()
+#     except Exception as e:
+#         logger.error("❌ Groq API call failed: %s", e)
+#         return "Sorry, I'm having trouble responding right now. Our team will get back to you shortly!"
+
+def cosine_similarity(a, b):
+    a, b = np.array(a), np.array(b)
+    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+
+def retrieve_relevant_chunks(query: str, top_k: int = 4) -> list[str]:
+    "Find most relevent documnet chunk for a buyer's question."
+    query_embedding = embedder.encode(query).tolist()
+
+    session = SessionLocal()
+    try:
+        all_chunks = session.query(DocumentChunk).all()
+        scored = []
+        for chunk in all_chunks:
+            chunk_embedding = json.loads(chunk.embedding)
+            score = cosine_similarity(query_embedding, chunk_embedding)
+            scored.append((score, chunk.chunk_text, chunk.source_file))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        top_chunks = scored[:top_k]
+
+        return [f"[From {source}]: {text}" for _, text, source in top_chunks]
+    finally:
+        session.close()
+
+SYSTEM_PROMPT_TEMPLATE = """You are a helpful real estate assistant for our WhataApp business account.
+Answer buyer questions usinf ONLY the propery information provided below.
+If the answer isn't in the provided context, politely say you don't have detail and offer to connect with an agent.
+Keep the replies concise (2-4 sentence) and conversational - this is WhatsApp, not email.
+
+RELEVANT PROPERT INFORMATION:
+{context}
+"""
+
 def generate_llm_reply(sender: str, new_message: str) -> str:
     """Build conversation context and get a rely from groq"""
     history = get_conversation_history(sender)
 
-    "Add newwst incoming message in conversation"
-    message = [{"role": "system", "content": SYSTEM_PROMPT}] + history + [
-    {"role": "user", "content": new_message}]
+    relevant_chunks = retrieve_relevant_chunks(new_message)
+    context = "\n\n".join(relevant_chunks) if relevant_chunks else "no specific propert data found."
+
+    system_prompt = SYSTEM_PROMPT_TEMPLATE.format(context=context)
+
+    messages = [{"role": "system", "context": system_prompt}] + history + [
+        {"role": "user", "context": new_message}
+    ]
 
     try:
         response = groq_client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             max_tokens=300,
-            messages=message
+            messages=messages
         )
         return response.choices[0].message.content.strip()
-    except Exception as e:
-        logger.error("❌ Groq API call failed: %s", e)
-        return "Sorry, I'm having trouble responding right now. Our team will get back to you shortly!"
 
+    except Exception as e:
+        logger.error("Groq API call failed: %s", e)
+        return "Sorry, I'm having trouble responding right now. Our team will get back to you shortly1"
 
 
 # ── Run ────────────────────────────────────────────────────────────────────────
