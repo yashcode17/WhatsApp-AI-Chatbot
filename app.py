@@ -182,6 +182,15 @@ def save_message(phone_number: str, direction: str, message_text: str):
     finally:
         session.close()
 
+def is_authorized_admin(req) -> bool:
+    """Guards destructive admin endpoints. Requires ADMIN_API_KEY to be set
+    AND the request to send a matching X-Admin-Key header. Returns False
+    (blocking the request) if ADMIN_API_KEY isn't configured at all - this
+    is intentional, so these endpoints are off by default."""
+    if not ADMIN_API_KEY:
+        return False
+    provided = req.headers.get("X-Admin-Key", "")
+    return hmac.compare_digest(provided, ADMIN_API_KEY)
 
 def is_duplicate_message(message_id: str) -> bool:
     session = SessionLocal()
@@ -541,6 +550,53 @@ def get_conversations(phone_number):
     finally:
         session.close()
 
+@app.route("/conversations", methods=["DELETE"])
+def delete_all_conversations():
+    """Deletes ALL chat history for ALL phone numbers. Irreversible.
+    Requires header: X-Admin-Key: <ADMIN_API_KEY>
+    """
+    if not is_authorized_admin(request):
+        logger.warning("❌ Unauthorized attempt to delete all conversations")
+        return jsonify({"error": "unauthorized"}), 401
+
+    session = SessionLocal()
+    try:
+        deleted = session.query(Conversation).delete()
+        session.commit()
+        logger.warning("🗑️ Deleted ALL conversations (%d rows)", deleted)
+        return jsonify({"status": "ok", "deleted_rows": deleted}), 200
+    except Exception as e:
+        session.rollback()
+        logger.error("Failed to delete conversations: %s", e)
+        return jsonify({"error": "failed to delete conversations"}), 500
+    finally:
+        session.close()
+
+@app.route("/conversations/<phone_number>", methods=["DELETE"])
+def delete_conversation_for_number(phone_number):
+    """Deletes chat history for a single phone number only. Irreversible.
+    Requires header: X-Admin-Key: <ADMIN_API_KEY>
+    """
+    if not is_authorized_admin(request):
+        logger.warning("❌ Unauthorized attempt to delete conversation for %s", phone_number)
+        return jsonify({"error": "unauthorized"}), 401
+
+    session = SessionLocal()
+    try:
+        deleted = (
+            session.query(Conversation)
+            .filter(Conversation.phone_number == phone_number)
+            .delete()
+        )
+        session.commit()
+        logger.warning("🗑️ Deleted %d conversation rows for %s", deleted, phone_number)
+        return jsonify({"status": "ok", "phone_number": phone_number, "deleted_rows": deleted}), 200
+    except Exception as e:
+        session.rollback()
+        logger.error("Failed to delete conversation for %s: %s", phone_number, e)
+        return jsonify({"error": "failed to delete conversation"}), 500
+    finally:
+        session.close()
 
 @app.route("/leads/<phone_number>", methods=["GET"])
 def get_lead(phone_number):
