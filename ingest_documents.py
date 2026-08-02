@@ -65,7 +65,7 @@ def extract_text_from_image(filepath: str) -> str:
                     },
                     {
                         "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64, {image_data}"}
+                        "image_url": {"url": f"data:image/jpeg;base64,{image_data}"}
                     }
                 ]
             }
@@ -81,6 +81,12 @@ def extract_text_from_txt(filepath: str) -> str:
 def ingest_file(filepath: str, session):
     filename = os.path.basename(filepath)
     ext = filename.lower().split(".")[-1]
+
+    #Remove old chunks of same file
+    session.query(DocumentChunk).filter(
+        DocumentChunk.source_file == filename
+    ).delete()
+    session.comit()
 
     logger.info("📄 Processing: %s", filename)
 

@@ -227,6 +227,25 @@ def get_conversations(phone_number):
     finally:
         session.close()
 
+# ---------------Grt Documents Data-------------
+@app.route("/debug/documents")
+def view_documents():
+    session = SessionLocal()
+    try:
+        chunks = session.query(DocumentChunk).all()
+        result = [
+            {
+                "id": c.id,
+                "source_file": c.source_file,
+                "chunk_preview": c.chunk_text[:150],
+                "embedding_length": len(json.loads(c.embedding))
+            }
+            for c in chunks
+        ]
+        return jsonify({"total_chunks": len(result), "chunks": result}), 200
+    finally:
+        session.close()
+
 def get_conversation_history(phone_number: str, limit: int = 10):
     "fetch last n messages from buyer, oldest first"
     session = SessionLocal()
