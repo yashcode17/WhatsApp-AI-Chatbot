@@ -12,8 +12,6 @@ import base64
 import logging
 
 from pypdf import PdfReader
-# from sentence_transformers import SentenceTransformer
-# NEW
 from fastembed import TextEmbedding
 from groq import Groq
 
@@ -24,9 +22,10 @@ logger = logging.getLogger(__name__)
 
 DOCS_FOLDER = "./property_documents"
 
-# embedder = SentenceTransformer("all-MiniLM-L6-v2")
 embedder = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
 groq_client = Groq(api_key=GROQ_API_KEY)
+
+VISION_MODEL = "qwen/qwen3.6-27b"
 
 def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> list[str]:
     """Split text into overlapping chunks for better retrieval."""
@@ -41,27 +40,33 @@ def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> list[str]
         start += chunk_size - overlap
     return chunks
 
+
 def extract_text_from_pdf(filepath: str) -> str:
-    render = PdfReader(filepath)
+    reader = PdfReader(filepath)
     text = ""
-    for page in render.pages:
+    for page in reader.pages:
         text += page.extract_text() or ""
     return text
 
+
 def extract_text_from_image(filepath: str) -> str:
-    """Use Groq's vsion model to describe/extract info from property images."""
+    """Use a Groq vision model to describe/extract info from property images."""
     with open(filepath, "rb") as f:
         image_data = base64.b64encode(f.read()).decode("utf-8")
 
     response = groq_client.chat.completions.create(
-        model="llama-3.2-90b-vision-preview",
+        model=VISION_MODEL,
         messages=[
             {
                 "role": "user",
                 "content": [
                     {
                         "type": "text",
-                        "text": "Describe this property image in detail: layout, rooms, condition, notable features, and any text/numbers visible (like price tags, area in sqft, address boards, ect)."
+                        "text": (
+                            "Describe this property image in detail: layout, rooms, condition, "
+                            "notable features, and any text/numbers visible (like price tags, "
+                            "area in sqft, address boards, etc.)."
+                        )
                     },
                     {
                         "type": "image_url",
@@ -74,21 +79,23 @@ def extract_text_from_image(filepath: str) -> str:
     )
     return response.choices[0].message.content
 
+
 def extract_text_from_txt(filepath: str) -> str:
     with open(filepath, "r", encoding="utf-8") as f:
         return f.read()
+
 
 def ingest_file(filepath: str, session):
     filename = os.path.basename(filepath)
     ext = filename.lower().split(".")[-1]
 
-    #Remove old chunks of same file
+    # Remove old chunks of same file
     session.query(DocumentChunk).filter(
         DocumentChunk.source_file == filename
     ).delete()
-    session.comit()
+    session.commit() # fixed: was session.comit(), which raised AttributeError
 
-    logger.info("📄 Processing: %s", filename)
+    logger.info("Processing: %s", filename)
 
     if ext == "pdf":
         text = extract_text_from_pdf(filepath)
@@ -97,16 +104,14 @@ def ingest_file(filepath: str, session):
     elif ext == "txt":
         text = extract_text_from_txt(filepath)
     else:
-        logger.warning("⚠️ Skipping unsupported file type: %s", filename)
+        logger.warning(" Skipping unsupported file type: %s", filename)
         return
 
     chunks = chunk_text(text)
-    logger.info("  -> split int0 %d chunks", len(chunks))
+    logger.info(" -> split into %d chunks", len(chunks))
 
     for chunk in chunks:
-        # embedding = embedder.encode(chunk).tolist()
-        # NEW
-        embedding = list(embedder.embed([chunk]))[0].tolist()
+        embedding = list(embedder.embed([chunk])[0].tolist())
         record = DocumentChunk(
             source_file=filename,
             chunk_text=chunk,
@@ -115,7 +120,8 @@ def ingest_file(filepath: str, session):
         session.add(record)
 
     session.commit()
-    logger.info("  Saved %d chunks from %s", len(chunks), filename)
+    logger.info(" Saved %d chunks from %s", len(chunks), filename)
+
 
 def main():
     session = SessionLocal()
@@ -128,6 +134,7 @@ def main():
         session.close()
 
     logger.info("Ingestion complete!")
+
 
 if __name__ == "__main__":
     main()

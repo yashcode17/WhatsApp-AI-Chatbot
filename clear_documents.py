@@ -5,9 +5,9 @@ from app import SessionLocal, DocumentChunk
 def clear_all_chunks():
     session = SessionLocal()
     try:
-        delete = session.query(DocumentChunk).delete()
+        deleted = session.query(DocumentChunk).delete()
         session.commit()
-        print("Deleted {delete} existing chunks")
+        print(f"Deleted {deleted} existing chunks")
     finally:
         session.close()
 
