@@ -293,7 +293,7 @@ def cosine_similarity(a, b):
 
 def retrieve_relevant_chunks(query: str, top_k: int = 4) -> list[str]:
     """Find the most relevant document chunks for a buyer's question."""
-    query_embedding = list(embedder.embed([query])[0].tolist())
+    query_embedding = list(embedder.embed([query]))[0].tolist()
 
     session = SessionLocal()
     try:

@@ -111,7 +111,7 @@ def ingest_file(filepath: str, session):
     logger.info(" -> split into %d chunks", len(chunks))
 
     for chunk in chunks:
-        embedding = list(embedder.embed([chunk])[0].tolist())
+        embedding = list(embedder.embed([chunk]))[0].tolist()
         record = DocumentChunk(
             source_file=filename,
             chunk_text=chunk,
