@@ -17,7 +17,9 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 import numpy as np
 import json
 
-from sentence_transformers import SentenceTransformer
+# from sentence_transformers import SentenceTransformer
+# NEW
+from fastembed import TextEmbedding
 
 app = Flask(__name__)
 logging.basicConfig(
@@ -48,7 +50,8 @@ engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine)
 
 #Setup Embedding
-embedder = SentenceTransformer("all-MiniLM-L6-v2")
+# embedder = SentenceTransformer("all-MiniLM-L6-v2")
+embedder = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
 
 SYSTEM_PROMPT = """You are a hgelpful sales assistent for our WhatsApp business account. 
                 You help buyers with product questions, pricing and general inqueries.
@@ -270,7 +273,9 @@ def cosine_similarity(a, b):
 
 def retrieve_relevant_chunks(query: str, top_k: int = 4) -> list[str]:
     "Find most relevent documnet chunk for a buyer's question."
-    query_embedding = embedder.encode(query).tolist()
+    # query_embedding = embedder.encode(query).tolist()
+    # NEW
+    query_embedding = list(embedder.embed([query]))[0].tolist()
 
     session = SessionLocal()
     try:
