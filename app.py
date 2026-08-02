@@ -11,6 +11,8 @@ import requests
 from flask import Flask, request, jsonify
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
+import numpy as np
+import json
 
 app = Flask(__name__)
 logging.basicConfig(
@@ -42,6 +44,16 @@ SYSTEM_PROMPT = """You are a hgelpful sales assistent for our WhatsApp business 
                 You help buyers with product questions, pricing and general inqueries.
                 Keep replies concise (2-4 sentences), friendly, and conversational - this is WhatsApp, not email.
                 If you don't know specific product details, politely say you'll connect them with the team."""
+
+class DocumentChunk(Base):
+    __tablename__ = "document_chunks"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    source_file = Column(String(255), nullable=False)
+    chunk_text  = Column(Text, nullable=False)
+    embedding   = Column(Text, nullable=False)  
+
+Base.metadata.create_all(engine)
 
 class Conversation(Base):
     __tablename__ = "conversations"
@@ -241,6 +253,7 @@ def generate_llm_reply(sender: str, new_message: str) -> str:
     except Exception as e:
         logger.error("❌ Groq API call failed: %s", e)
         return "Sorry, I'm having trouble responding right now. Our team will get back to you shortly!"
+
 
 
 # ── Run ────────────────────────────────────────────────────────────────────────
