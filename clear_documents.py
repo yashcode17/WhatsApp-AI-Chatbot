@@ -1,3 +1,5 @@
+#clear_documents.py
+
 from app import SessionLocal, DocumentChunk
 
 def clear_all_chunks():
