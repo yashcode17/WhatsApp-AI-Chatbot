@@ -353,29 +353,37 @@ def generate_llm_reply(sender: str, new_message: str) -> str:
 # --- Agent 3: Analyzer (silent metadata extraction, runs in the background) ---
 
 ANALYZER_PROMPT_TEMPLATE = """Extract any real estate lead-qualification details the customer just revealed.
-Return ONLY valid JSON, no prose, matching this schema exactly:
+You must always respond with valid JSON matching this exact schema - never leave the response empty.
+
+Schema:
 {{"budget_range": null or string, "config_preference": null or string,
 "location_preference": null or string, "timeline": null or string,
 "financing_status": null or string, "sentiment": "positive" or "neutral" or "negative"}}
-Only fill fields that are explicitly mentioned or clearly implied by the message below.
-Leave everything else null. Do not guess.
+
+Only fill fields that are explicitly mentioned or clearly implied by the message. Leave everything else null.
+Do not guess. If the message contains no useful lead information, return all fields as null except sentiment.
+
+Example - message: "just checking my number is still same"
+Response: {{"budget_range": null, "config_preference": null, "location_preference": null, "timeline": null, "financing_status": null, "sentiment": "neutral"}}
 
 Customer message: {message}
 """
 
 
 def analyze_and_update_lead(phone_number: str, message: str):
-    """Runs on every customer turn, in a background thread, so it never
-    delays the WhatsApp reply. Never talks to the customer directly -
-    it only updates the shared lead profile."""
     try:
         response = groq_client.chat.completions.create(
             model=ANALYZER_AGENT_MODEL,
             max_tokens=200,
+            temperature=0,  # more deterministic JSON output
             response_format={"type": "json_object"},
             messages=[{"role": "user", "content": ANALYZER_PROMPT_TEMPLATE.format(message=message)}]
         )
-        extracted = json.loads(response.choices[0].message.content)
+        content = response.choices[0].message.content
+        if not content or not content.strip():
+            logger.warning("Analyzer returned empty content for message: %r", message)
+            return
+        extracted = json.loads(content)
     except Exception as e:
         logger.error("Analyzer agent failed: %s", e)
         return
