@@ -311,8 +311,8 @@ def generate_llm_reply(sender: str, new_message: str) -> str:
 
     system_prompt = SYSTEM_PROMPT_TEMPLATE.format(context=context)
 
-    messages = [{"role": "system", "context": system_prompt}] + history + [
-        {"role": "user", "context": new_message}
+    messages = [{"role": "system", "content": system_prompt}] + history + [
+        {"role": "user", "content": new_message}
     ]
 
     try:
