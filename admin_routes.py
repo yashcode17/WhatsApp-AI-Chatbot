@@ -15,6 +15,7 @@ If ADMIN_API_KEY isn't set in the environment, is_authorized_admin() always
 returns False, so these endpoints are effectively disabled by default.
 """
 
+import json
 from flask import Blueprint, jsonify, request
 
 from core import (
@@ -25,7 +26,7 @@ from core import (
     is_authorized_admin,
     logger,
 )
-import json
+
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -39,10 +40,42 @@ def _require_admin():
     return None
 
 
-# --- Conversations ----------------------------------------------------
+# --- Conversations --------------------------------------------------------
 
 @admin_bp.route("/conversations/<phone_number>", methods=["GET"])
 def get_conversations(phone_number):
+    """
+    Get full chat history for a phone number
+    ---
+    tags:
+      - Admin
+    security:
+      - AdminKey: []
+    parameters:
+      - name: phone_number
+        in: path
+        type: string
+        required: true
+        example: "919876543210"
+    responses:
+      200:
+        description: Messages oldest-first
+        schema:
+          type: array
+          items:
+            type: object
+            properties:
+              direction:
+                type: string
+                enum: [incoming, outgoing]
+              message:
+                type: string
+              timestamp:
+                type: string
+                format: date-time
+      401:
+        description: Missing or invalid X-Admin-Key.
+    """
     unauthorized = _require_admin()
     if unauthorized:
         return unauthorized
@@ -70,8 +103,29 @@ def get_conversations(phone_number):
 
 @admin_bp.route("/conversations", methods=["DELETE"])
 def delete_all_conversations():
-    """Deletes ALL chat history for ALL phone numbers. Irreversible.
-    Requires header: X-Admin-Key: <ADMIN_API_KEY>
+    """
+    Delete ALL chat history for ALL phone numbers
+    ---
+    tags:
+      - Admin
+    security:
+      - AdminKey: []
+    description: Irreversible. Wipes the entire conversations table.
+    responses:
+      200:
+        description: Deleted
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              example: ok
+            deleted_rows:
+              type: integer
+      401:
+        description: Missing or invalid X-Admin-Key.
+      500:
+        description: Delete failed.
     """
     unauthorized = _require_admin()
     if unauthorized:
@@ -81,7 +135,7 @@ def delete_all_conversations():
     try:
         deleted = session.query(Conversation).delete()
         session.commit()
-        logger.warning("🗑️ Deleted %d conversation rows", deleted)
+        logger.warning("🗑️ Deleted ALL conversations (%d rows)", deleted)
         return jsonify({"status": "ok", "deleted_rows": deleted}), 200
     except Exception as e:
         session.rollback()
@@ -93,8 +147,37 @@ def delete_all_conversations():
 
 @admin_bp.route("/conversations/<phone_number>", methods=["DELETE"])
 def delete_conversation_for_number(phone_number):
-    """Deletes chat history for a single phone number only. Irreversible.
-    Requires header: X-Admin-Key: <ADMIN_API_KEY>
+    """
+    Delete chat history for a single phone number
+    ---
+    tags:
+      - Admin
+    security:
+      - AdminKey: []
+    description: Irreversible.
+    parameters:
+      - name: phone_number
+        in: path
+        type: string
+        required: true
+        example: "919876543210"
+    responses:
+      200:
+        description: Deleted
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              example: ok
+            phone_number:
+              type: string
+            deleted_rows:
+              type: integer
+      401:
+        description: Missing or invalid X-Admin-Key.
+      500:
+        description: Delete failed.
     """
     unauthorized = _require_admin()
     if unauthorized:
@@ -118,10 +201,54 @@ def delete_conversation_for_number(phone_number):
         session.close()
 
 
-# --- Leads -----------------------------------------------------------
+# --- Leads ----------------------------------------------------------------
 
 @admin_bp.route("/leads/<phone_number>", methods=["GET"])
 def get_lead(phone_number):
+    """
+    Get the extracted lead profile for a phone number
+    ---
+    tags:
+      - Admin
+    security:
+      - AdminKey: []
+    parameters:
+      - name: phone_number
+        in: path
+        type: string
+        required: true
+        example: "919876543210"
+    responses:
+      200:
+        description: Lead profile
+        schema:
+          type: object
+          properties:
+            phone_number:
+              type: string
+            conversation_stage:
+              type: string
+              enum: [new, qualifying, info_sharing, closing]
+            budget_range:
+              type: string
+            config_preference:
+              type: string
+            location_preference:
+              type: string
+            timeline:
+              type: string
+            financing_status:
+              type: string
+            lead_quality_score:
+              type: integer
+            last_updated:
+              type: string
+              format: date-time
+      401:
+        description: Missing or invalid X-Admin-Key.
+      404:
+        description: No lead found for this phone number.
+    """
     unauthorized = _require_admin()
     if unauthorized:
         return unauthorized
@@ -146,10 +273,44 @@ def get_lead(phone_number):
         session.close()
 
 
-# --- Documents (RAG chunk inspection) ---------------------------------
+# --- Documents (RAG chunk inspection) ------------------------------------
 
 @admin_bp.route("/documents", methods=["GET"])
 def view_documents():
+    """
+    Inspect ingested RAG document chunks
+    ---
+    tags:
+      - Admin
+    security:
+      - AdminKey: []
+    description: >
+      Debug view over the document_chunks table populated by
+      ingest_documents.py. Shows a preview of each chunk, not the full text.
+    responses:
+      200:
+        description: Chunk inventory
+        schema:
+          type: object
+          properties:
+            total_chunks:
+              type: integer
+            chunks:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  source_file:
+                    type: string
+                  chunk_preview:
+                    type: string
+                  embedding_length:
+                    type: integer
+      401:
+        description: Missing or invalid X-Admin-Key.
+    """
     unauthorized = _require_admin()
     if unauthorized:
         return unauthorized

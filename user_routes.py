@@ -28,10 +28,28 @@ from core import (
 user_bp = Blueprint("user", __name__)
 
 
-# --- HEALTH CHECK ---------------------------------------------------
+# --- HEALTH CHECK ---------------------------------------------------------
 
 @user_bp.route("/test", methods=["GET"])
 def test_route():
+    """
+    Health check
+    ---
+    tags:
+      - User
+    responses:
+      200:
+        description: Server is running
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              example: ok
+            message:
+              type: string
+              example: Server is running
+    """
     logger.info("/test endpoint - server is alive")
     return jsonify({
         "status": "ok",
@@ -39,11 +57,37 @@ def test_route():
     }), 200
 
 
-# --- Webhook Verification (GET) -------------------------------------
+# --- Webhook Verification (GET) -------------------------------------------
 
 @user_bp.route("/webhook", methods=["GET"])
 def verify_webhook():
-    """Meta calls this once to verify your webhook URL."""
+    """
+    WhatsApp webhook verification
+    ---
+    tags:
+      - User
+    description: >
+      Meta calls this once (and whenever you update the webhook config in the
+      Meta App dashboard) to verify you control this URL. Not something a
+      person calls manually.
+    parameters:
+      - name: hub.mode
+        in: query
+        type: string
+        example: subscribe
+      - name: hub.verify_token
+        in: query
+        type: string
+        description: Must match the VERIFY_TOKEN env var.
+      - name: hub.challenge
+        in: query
+        type: string
+    responses:
+      200:
+        description: Verified - echoes back hub.challenge.
+      403:
+        description: Token mismatch or missing.
+    """
     mode = request.args.get("hub.mode")
     token = request.args.get("hub.verify_token")
     challenge = request.args.get("hub.challenge")
@@ -56,11 +100,40 @@ def verify_webhook():
         return "Forbidden", 403
 
 
-# --- Incoming Messages (POST) ---------------------------------------
+# --- Incoming Messages (POST) ---------------------------------------------
 
 @user_bp.route("/webhook", methods=["POST"])
 def receive_message():
-    """Meta sends all incoming messages here."""
+    """
+    Receive an incoming WhatsApp message
+    ---
+    tags:
+      - User
+    description: >
+      Meta POSTs every incoming message/status event here. Verifies the
+      X-Hub-Signature-256 header (if WHATSAPP_APP_SECRET is set), dedupes by
+      message id, routes to the initiator or info agent, and replies via the
+      WhatsApp Cloud API. Not something a person calls manually - shape of
+      the body is Meta's WhatsApp webhook payload format.
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          description: Meta WhatsApp webhook payload. See Meta's Cloud API docs for the full shape.
+    responses:
+      200:
+        description: Always 200 once parsed, even for ignored/duplicate events.
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              example: ok
+      403:
+        description: Signature verification failed.
+    """
     if not verify_webhook_signature(request):
         logger.warning("❌ Webhook signature verification failed - rejecting request")
         return "Forbidden", 403
@@ -83,7 +156,7 @@ def receive_message():
 
         # Meta may redeliver the same webhook event - skip if we've seen this message id.
         if is_duplicate_message(msg_id):
-            logger.info("⏭️ Skipping already-processed message id: %s", msg_id)
+            logger.info("⏩ Skipping already-processed message id: %s", msg_id)
             return jsonify({"status": "duplicate_ignored"}), 200
         mark_message_processed(msg_id)
 
